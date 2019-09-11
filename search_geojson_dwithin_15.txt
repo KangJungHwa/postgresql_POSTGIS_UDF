@@ -1,0 +1,58 @@
+-- FUNCTION: weather.search_geojson_dwithin_15(text, text)
+
+-- DROP FUNCTION weather.search_geojson_dwithin_15(text, text);
+
+CREATE OR REPLACE FUNCTION weather.search_geojson_dwithin_15(
+	fromdt text,
+	xypoint text)
+    RETURNS json
+    LANGUAGE 'plpgsql'
+
+    COST 100
+    VOLATILE 
+AS $BODY$
+	DECLARE
+    sSQL text;
+	param_cnt integer;
+    apply_time text;
+	maxdate text;
+	limit_time text;
+    resultout json; 
+
+BEGIN
+    
+	param_cnt:=array_length(regexp_split_to_array(xypoint::text,','),1);
+	  IF param_cnt = 0 THEN
+        RAISE EXCEPTION 'invalid point parameter!!';
+      END IF;
+	  
+	  IF length(fromdt) <> 14 THEN
+        RAISE EXCEPTION 'invalid date parameter!!';
+      END IF;
+	apply_time:=nearest_time(fromdt);
+
+     sSQL := generate_sql('search_geojson_dwithin_15',apply_time, xypoint,param_cnt );
+
+	
+    EXECUTE  sSQL into resultout;
+	IF length(resultout::text) < 50 THEN
+	    select max(_timestamp) into maxdate from weather.weather_info;  
+		select TO_CHAR(TO_TIMESTAMP(maxdate, 'YYYYMMDDHH24') + interval '3 hour','YYYYMMDDHH24MISS') into limit_time;
+		
+		IF fromdt <= limit_time THEN
+			sSQL := generate_sql('search_geojson_dwithin_15',maxdate, xypoint,param_cnt);
+			--raise notice '%' , limit_time;
+			EXECUTE  sSQL into resultout;
+			return resultout;
+		ELSE
+		    return resultout;
+		END IF;
+    ELSE
+	    return resultout; 
+	END IF;
+               
+END ;
+$BODY$;
+
+ALTER FUNCTION weather.search_geojson_dwithin_15(text, text)
+    OWNER TO hhiweather;

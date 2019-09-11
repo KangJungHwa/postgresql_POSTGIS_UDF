@@ -1,0 +1,50 @@
+-- FUNCTION: weather.search_dwithin_05(text, text)
+
+-- DROP FUNCTION weather.search_dwithin_05(text, text);
+
+CREATE OR REPLACE FUNCTION weather.search_dwithin_05(
+	fromdt text,
+	xypoint text)
+    RETURNS TABLE(_timestamp character varying, longitude numeric, latitude numeric, u_wind numeric, v_wind numeric, wave_height numeric, wave_direction numeric, wave_period numeric, swell_height numeric, swell_direction numeric, swell_period numeric, ice_cover numeric, u_current numeric, v_current numeric, water_temperature numeric, pressure numeric, air_temperature numeric) 
+    LANGUAGE 'plpgsql'
+
+    COST 100
+    VOLATILE 
+    ROWS 1000
+AS $BODY$
+	DECLARE
+    sSQL text;
+	param_cnt integer;
+    apply_time text;
+	maxdate text;
+	limit_time text;
+
+BEGIN
+	  param_cnt:=array_length(regexp_split_to_array(xypoint::text,','),1);
+	  IF param_cnt = 0 THEN
+        RAISE EXCEPTION 'invalid point parameter!!';
+      END IF;
+	  IF length(fromdt) <> 14 THEN
+        RAISE EXCEPTION 'invalid date parameter!!';
+      END IF;	  
+	  apply_time:=nearest_time(fromdt);
+    sSQL := generate_sql('search_dwithin_05',apply_time, xypoint,param_cnt );
+	--RAISE notice '%', sSQL;
+    return  query 
+    EXECUTE  sSQL;
+	IF NOT FOUND THEN
+	    select max(a._timestamp) into maxdate from weather.weather_info a;  
+		select TO_CHAR(TO_TIMESTAMP(maxdate, 'YYYYMMDDHH24') + interval '3 hour','YYYYMMDDHH24MISS') into limit_time;
+		
+		IF fromdt <= limit_time THEN
+			sSQL := generate_sql('search_dwithin_05',maxdate, xypoint,param_cnt);
+			--RAISE notice '%', sSQL;
+			return  query 
+            EXECUTE sSQL;  			
+		END IF;
+    END IF;
+END ;
+$BODY$;
+
+ALTER FUNCTION weather.search_dwithin_05(text, text)
+    OWNER TO hhiweather;

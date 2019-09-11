@@ -1,0 +1,58 @@
+-- FUNCTION: weather.nearest_time(text)
+
+-- DROP FUNCTION weather.nearest_time(text);
+
+CREATE OR REPLACE FUNCTION weather.nearest_time(
+	shiptime text)
+    RETURNS text
+    LANGUAGE 'plpgsql'
+
+    COST 100
+    VOLATILE 
+AS $BODY$
+
+	DECLARE
+	  v_date text;
+	  v_hour text;
+	  v_min text;
+	  v_sec text;
+	  APPLY_DATE TEXT;
+	  NEXT_DATE TEXT;
+
+	  
+	BEGIN
+		  v_date :=substr(shiptime,1,8);
+		  v_hour :=substr(shiptime,9,2);
+		  v_min :=substr(shiptime,11,2);
+		  v_sec :=substr(shiptime,13,2);
+		  
+		  NEXT_DATE:=replace(substr((to_timestamp(v_date,'YYYYMMDD')+ interval '1' day)::text,1,10),'-','');
+		  
+		 EXECUTE 
+
+		  'WITH TAB as
+				   (SELECT generate_series(3,21,3)  apply_time,
+				           generate_series(5400,70200,10800) l_sec,
+				           generate_series(16200,86400,10800) u_sec,	
+				   EXTRACT(EPOCH FROM time '''||'00:00:00'||''' + '''|| v_hour ||':'|| v_min ||':' || v_sec||''') ship_time
+					UNION ALL
+					SELECT 0, 0,5400,        
+						   EXTRACT(EPOCH FROM time '''||'00:00:00'||''' + '''|| v_hour ||':'|| v_min ||':' || v_sec||''') ship_time
+					UNION ALL
+				    SELECT 99, 81000,86400,        
+							   EXTRACT(EPOCH FROM time  '''||'00:00:00'||''' + '''|| v_hour ||':'|| v_min ||':' || v_sec||''') ship_time)	   
+					SELECT CONCAT(CASE WHEN apply_time = 99 then  '''|| NEXT_DATE  || ''' ELSE '''|| v_date || ''' END ,
+					       CASE WHEN apply_time < 10 then '''||'0'||'''|| apply_time::text 
+						        WHEN apply_time = 99 then '''||'00'||'''
+						   ELSE apply_time::text END) AS apply_time
+					  FROM tab
+					 WHERE 0=0
+					   AND ship_time  >= l_sec
+					   AND ship_time < u_sec' INTO APPLY_DATE;
+					  RETURN APPLY_DATE;
+	END;
+
+$BODY$;
+
+ALTER FUNCTION weather.nearest_time(text)
+    OWNER TO hhiweather;

@@ -1,0 +1,210 @@
+-- FUNCTION: weather.generate_sql(text, text, text, integer)
+
+-- DROP FUNCTION weather.generate_sql(text, text, text, integer);
+
+CREATE OR REPLACE FUNCTION weather.generate_sql(
+	func_name text,
+	apply_time text,
+	point text,
+	param_cnt integer)
+    RETURNS text
+    LANGUAGE 'plpgsql'
+
+    COST 100
+    VOLATILE 
+AS $BODY$
+    DECLARE
+    sSQL text;
+BEGIN
+    IF func_name = 'search_dwithin_05' THEN
+        sSQL := 'Select _timestamp,
+               longitude,
+               latitude,
+               u_wind,
+               v_wind,
+               wave_height,
+               wave_direction,
+               wave_period,
+               swell_height,
+               swell_direction,
+               swell_period,
+               ice_cover,
+               u_current,
+               v_current,
+               water_temperature,
+               pressure,
+               air_temperature
+          FROM weather_info
+         WHERE ST_DWithin(geom, '''||'SRID=4326;MULTIPOINT('||point||')'', 0.5)
+           AND _timestamp = '''|| apply_time ||'''
+         ORDER BY '''||'SRID=4326;MULTIPOINT('|| point ||')''::geography <-> weather_info.geom LIMIT '|| param_cnt;
+         
+    ELSIF func_name = 'search_dwithin_15' THEN
+    
+        sSQL := 'with 
+                 long_t as
+                           (SELECT long_col FROM generate_series(-180,180,1.5) as long_col),
+                 lat_t as
+                           (SELECT lat_col FROM generate_series(-90,90, 1.5) as lat_col),       
+                 weather_info  as
+                       (SELECT *
+                          FROM weather.weather_info
+                         WHERE ST_DWithin(geom, '''||'SRID=4326;MULTIPOINT('|| point ||')'', 1.5)
+                           AND _timestamp = '''|| apply_time ||''')
+                  SELECT   _timestamp,
+                           longitude,
+                           latitude,
+                           u_wind,
+                           v_wind,
+                           wave_height,
+                           wave_direction,
+                           wave_period,
+                           swell_height,
+                           swell_direction,
+                           swell_period,
+                           ice_cover,
+                           u_current,
+                           v_current,
+                           water_temperature,
+                           pressure,
+                           air_temperature
+                FROM weather_info t1, long_t t2, lat_t t3
+                WHERE t1.longitude=t2.long_col
+                  AND t1.latitude=t3.lat_col
+                ORDER BY '''||'SRID=4326;MULTIPOINT('|| point || ')''::geography <-> t1.geom limit '|| param_cnt;
+                
+    ELSIF func_name = 'search_geojson_dwithin_05' THEN
+        sSQL :='SELECT row_to_json(f)
+                 FROM ( 
+                     SELECT 
+                      '''||'FeatureCollection''' || ' As type, array_to_json(array_agg(fc)) As features
+                         FROM (SELECT 
+                                 '''||'Feature''' || ' As type ,
+                                 ST_AsGeoJSON(geom)::JSON as geometry, 
+                                  row_to_json(
+                                   (SELECT row
+                                      FROM 
+                                       (SELECT 
+                                          _timestamp,
+                                          longitude,
+                                          latitude,
+                                          u_wind,
+                                          v_wind,
+                                          wave_height,
+                                          wave_direction,
+                                          wave_period,
+                                          swell_height,
+                                          swell_direction,
+                                          swell_period,
+                                          ice_cover,
+                                          u_current,
+                                          v_current,
+                                          water_temperature,
+                                          pressure,
+                                          air_temperature) As row)) as properties  
+                                       FROM weather.weather_info 
+                                      WHERE ST_DWithin(geom, '''||'SRID=4326;MULTIPOINT('|| point ||')'', 0.5) 
+                                        AND _timestamp = '''|| apply_time ||'''
+                                     ORDER BY '''||'SRID=4326;MULTIPOINT('|| point ||')''::geography <-> weather_info.geom 
+                                     LIMIT '|| param_cnt || ') fc) f';
+                
+    ELSIF func_name = 'search_geojson_dwithin_15' THEN
+        sSQL := 'With long_t as (SELECT long_col FROM generate_series(-180,180,1.5) as long_col), 
+                 lat_t as (SELECT lat_col FROM generate_series(-90,90, 1.5) as lat_col),
+             weather_info 
+                 as (SELECT * 
+                       FROM weather.weather_info 
+                      WHERE ST_DWithin(geom, '''||'SRID=4326;MULTIPOINT('||point||')'', 1.5) 
+                        AND _timestamp = '''|| apply_time ||''' ) 
+                     SELECT row_to_json(f) as geojson 
+                       FROM ( SELECT '''||'FeatureCollection''' || ' As type, array_to_json(array_agg(fc)) As features
+                               FROM (SELECT '''||'Feature''' || ' As type ,
+                                            ST_AsGeoJSON(geom)::json as geometry, 
+                                            row_to_json(
+                                                       (SELECT row 
+                                                         FROM 
+                                                             (SELECT _timestamp,
+                                                                    longitude,
+                                                                    latitude,
+                                                                    u_wind,
+                                                                    v_wind,
+                                                                    wave_height,
+                                                                    wave_direction,
+                                                                    wave_period,
+                                                                    swell_height,
+                                                                    swell_direction,
+                                                                    swell_period, 
+                                                                    ice_cover,
+                                                                    u_current,
+                                                                    v_current,
+                                                                    water_temperature,
+                                                                    pressure,
+                                                                    air_temperature) As row)) as properties 
+                                                             FROM weather_info, long_t, lat_t
+                                                            WHERE weather_info.longitude = long_t.long_col
+                                                              AND weather_info.latitude = lat_t.lat_col
+                                                            ORDER BY '''||'SRID=4326;MULTIPOINT('|| point ||')''::geography <-> weather_info.geom 
+                                                            LIMIT '|| param_cnt || ') fc) f';
+    ELSIF func_name = 'search_polygon_05' THEN
+        sSQL := 'SELECT _timestamp,
+                        longitude,
+                        latitude,
+                        u_wind,
+                        v_wind,
+                        wave_height,
+                        wave_direction,
+                        wave_period,
+                        swell_height,
+                        swell_direction,
+                        swell_period, 
+                        ice_cover,
+                        u_current,
+                        v_current,
+                        water_temperature,
+                        pressure,
+                        air_temperature
+                FROM weather.weather_info
+                WHERE _timestamp = '''|| apply_time ||''' 
+                AND st_intersects(geom, '''||'SRID=4326;POLYGON(('||point||'))'')';
+    
+    ELSIF func_name = 'search_geojson_polygon_05' THEN
+        sSQL := 'SELECT row_to_json(f)
+                 FROM ( 
+                     SELECT 
+                      '''||'FeatureCollection''' || ' As type, array_to_json(array_agg(fc)) As features
+                         FROM (SELECT 
+                                 '''||'Feature''' || ' As type ,
+                                 ST_AsGeoJSON(geom)::JSON as geometry, 
+                                  row_to_json(
+                                   (SELECT row
+                                      FROM 
+                                       (SELECT 
+                                            _timestamp,
+                                            longitude,
+                                            latitude,
+                                            u_wind,
+                                            v_wind,
+                                            wave_height,
+                                            wave_direction,
+                                            wave_period,
+                                            swell_height,
+                                            swell_direction,
+                                            swell_period,
+                                            ice_cover,
+                                            u_current,
+                                            v_current,
+                                            water_temperature,
+                                            pressure,
+                                            air_temperature) As row)) as properties  
+                                         FROM weather.weather_info
+                                        WHERE _timestamp = '''|| apply_time ||''' 
+                                          AND st_intersects(geom, '''||'SRID=4326;POLYGON(('||point||'))'')    
+                                          ) fc) f';
+    
+    END IF;
+    RETURN  sSQL;
+END ;
+$BODY$;
+
+ALTER FUNCTION weather.generate_sql(text, text, text, integer)
+    OWNER TO hhiweather;

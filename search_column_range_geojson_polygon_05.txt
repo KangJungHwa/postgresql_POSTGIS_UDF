@@ -1,0 +1,61 @@
+-- FUNCTION: weather.search_column_range_geojson_polygon_05(text, text, text, text, text)
+
+-- DROP FUNCTION weather.search_column_range_geojson_polygon_05(text, text, text, text, text);
+
+CREATE OR REPLACE FUNCTION weather.search_column_range_geojson_polygon_05(
+	fromdt text,
+	todt text,
+	region text,
+	xypoint text,
+	select_column text)
+    RETURNS json
+    LANGUAGE 'plpgsql'
+
+    COST 100
+    VOLATILE 
+AS $BODY$
+	DECLARE
+    sSQL text;	
+	maxdate text;
+	apply_data_from text;
+	apply_data_to text;
+	apply_region text;
+    limit_time  text;
+	resultout  text;
+BEGIN
+    
+	 IF length(fromdt) <> 14 THEN
+        RAISE EXCEPTION 'invalid date parameter!!';
+     END IF;
+	  
+     if length(region) = 0 then
+     	apply_region=xypoint;
+     else
+     	select boundary into apply_region from weather.weather_zone_info where zone_alias=region;
+     end if;
+	
+      apply_data_from :=nearest_time(fromdt);
+	  apply_data_to :=nearest_time(todt);
+      sSQL := generate_column_sql('search_column_range_geojson_polygon_05',apply_data_from, apply_data_to, apply_region,0 );
+	  --RAISE notice '%', sSQL;
+      EXECUTE  sSQL into resultout;
+	  IF length(resultout::text) < 50 THEN
+	      select max(_timestamp) into maxdate from weather.weather_info;  
+		  select TO_CHAR(TO_TIMESTAMP(maxdate, 'YYYYMMDDHH24') + interval '3 hour','YYYYMMDDHH24MISS') into limit_time;
+		
+		  IF fromdt <= limit_time THEN
+		  	  sSQL := generate_column_sql('search_column_range_geojson_polygon_05',apply_data_from,maxdate, apply_region,0);
+			  --raise notice '%' , limit_time;
+			  EXECUTE  sSQL into resultout;
+			  return resultout;
+		  ELSE
+		      return resultout;
+		  END IF;
+      ELSE
+	    return resultout; 
+	  END IF;
+END ;
+$BODY$;
+
+ALTER FUNCTION weather.search_column_range_geojson_polygon_05(text, text, text, text, text)
+    OWNER TO hhiweather;

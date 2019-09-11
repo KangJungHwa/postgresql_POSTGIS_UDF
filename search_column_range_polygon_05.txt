@@ -1,0 +1,61 @@
+-- FUNCTION: weather.search_column_range_polygon_05(text, text, text, text, text)
+
+-- DROP FUNCTION weather.search_column_range_polygon_05(text, text, text, text, text);
+
+CREATE OR REPLACE FUNCTION weather.search_column_range_polygon_05(
+	fromdt text,
+	todt text,
+	region text,
+	xypoint text,
+	select_column text)
+    RETURNS TABLE(_timestamp character varying, longitude numeric, latitude numeric, selected_column numeric) 
+    LANGUAGE 'plpgsql'
+
+    COST 100
+    VOLATILE 
+    ROWS 100000
+AS $BODY$
+	DECLARE
+    sSQL text;
+	apply_data_from text;
+	apply_data_to text;
+    apply_time text;
+	maxdate text;
+	limit_time text;
+	apply_region text;
+BEGIN
+       IF length(fromdt) <> 14 THEN
+        RAISE EXCEPTION 'invalid from date parameter!!';
+      END IF;
+	  IF length(todt) <> 14 THEN
+        RAISE EXCEPTION 'invalid to date parameter!!';
+      END IF;	
+	  
+     if length(region) = 0 then
+     	apply_region=xypoint;
+     else
+     	select boundary into apply_region from weather.weather_zone_info where zone_alias=region;
+     end if;
+      apply_data_from :=nearest_time(fromdt);
+	  apply_data_to :=nearest_time(todt);	 
+	    sSQL := generate_column_sql('search_column_range_polygon_05',apply_data_from,apply_data_to, apply_region,select_column );
+	--RAISE notice '%', sSQL;
+    return  query 
+    EXECUTE  sSQL;
+	IF NOT FOUND THEN
+	    select max(a._timestamp) into maxdate from weather.weather_info a;  
+		select TO_CHAR(TO_TIMESTAMP(maxdate, 'YYYYMMDDHH24') + interval '3 hour','YYYYMMDDHH24MISS') into limit_time;
+		
+		IF fromdt <= limit_time THEN
+			sSQL := generate_column_sql('search_column_range_polygon_05',apply_data_from,maxdate, apply_region,select_column);
+			RAISE notice '%', sSQL;
+			return  query 
+            EXECUTE sSQL;  			
+		END IF;
+    END IF;				
+         
+END ;
+$BODY$;
+
+ALTER FUNCTION weather.search_column_range_polygon_05(text, text, text, text, text)
+    OWNER TO hhiweather;

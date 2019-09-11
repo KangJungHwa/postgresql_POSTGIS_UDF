@@ -1,0 +1,83 @@
+-- FUNCTION: weather.generate_column_sql(text, text, text, text, text)
+
+-- DROP FUNCTION weather.generate_column_sql(text, text, text, text, text);
+
+CREATE OR REPLACE FUNCTION weather.generate_column_sql(
+	func_name text,
+	apply_data_from text,
+	apply_data_to text,
+	point text,
+	select_column text)
+    RETURNS text
+    LANGUAGE 'plpgsql'
+
+    COST 100
+    VOLATILE 
+AS $BODY$
+    DECLARE
+    sSQL text;
+BEGIN
+    IF func_name = 'search_column_geojson_polygon_05' THEN
+		sSQL:='SELECT row_to_json(f)
+			   FROM ( 
+				 SELECT 
+				  '''||'FeatureCollection''' || ' As type, array_to_json(array_agg(fc)) As features
+					 FROM (SELECT 
+							 '''||'Feature''' || ' As type ,
+							 ST_AsGeoJSON(geom)::JSON as geometry, 
+							  row_to_json(
+							   (SELECT row
+								  FROM 
+								   (SELECT 
+										_timestamp,
+										longitude,
+										latitude,
+										'||select_column||') As row)) as properties  
+									 FROM weather.weather_info
+									WHERE _timestamp = '''|| apply_data_from ||''' 
+									  AND st_intersects(geom, '''||'SRID=4326;POLYGON(('||point||'))'')	
+									  ) fc) f';
+	ELSIF func_name = 'search_column_polygon_05' THEN
+		sSQL:='SELECT _timestamp,
+					longitude,
+					latitude,
+					'||select_column||'
+			FROM weather.weather_info
+			WHERE _timestamp = '''|| apply_data_from ||''' 
+			AND st_intersects(geom, '''||'SRID=4326;POLYGON(('||point||'))'')';
+	ELSIF func_name = 'search_column_range_geojson_polygon_05' THEN
+      sSQL:='SELECT row_to_json(f)
+            FROM ( 
+            SELECT 
+                '''||'FeatureCollection'||''' As type, array_to_json(array_agg(fc)) As features
+                FROM (SELECT 
+                        '''||'Feature'||''' As type ,
+                        ST_AsGeoJSON(geom)::JSON as geometry, 
+                            row_to_json(
+                                (SELECT row
+                                        FROM 
+                                          (SELECT 
+                                                _timestamp
+                                                longitude,
+               									latitude,
+                								'||select_column||') As row)) as properties 
+                                                FROM weather.weather_info
+                                                WHERE _timestamp BETWEEN '''|| apply_data_from ||''' AND '''|| apply_data_to ||'''
+                                                AND st_intersects(geom, '''||'SRID=4326;POLYGON(('||point||'))'')
+                                        ) fc) f';	
+	ELSIF func_name = 'search_column_range_polygon_05' THEN
+	  sSQL:='SELECT 
+              _timestamp,
+              longitude,
+              latitude,
+              '||select_column||'
+        FROM weather.weather_info
+        where _timestamp between '''|| apply_data_from ||''' AND '''|| apply_data_to ||''' 
+         and st_intersects(geom, '''||'SRID=4326;POLYGON(('||point||'))'')';
+	END IF;
+	RETURN  sSQL;
+END ;
+$BODY$;
+
+ALTER FUNCTION weather.generate_column_sql(text, text, text, text, text)
+    OWNER TO hhiweather;

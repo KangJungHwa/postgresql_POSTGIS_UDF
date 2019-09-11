@@ -1,0 +1,59 @@
+-- FUNCTION: weather.search_range_dwithin_15(text, text, text)
+
+-- DROP FUNCTION weather.search_range_dwithin_15(text, text, text);
+
+CREATE OR REPLACE FUNCTION weather.search_range_dwithin_15(
+	fromdt text,
+	todt text,
+	xypoint text)
+    RETURNS TABLE(_timestamp character varying, longitude numeric, latitude numeric, u_wind numeric, v_wind numeric, wave_height numeric, wave_direction numeric, wave_period numeric, swell_height numeric, swell_direction numeric, swell_period numeric, ice_cover numeric, u_current numeric, v_current numeric, water_temperature numeric, pressure numeric, air_temperature numeric) 
+    LANGUAGE 'plpgsql'
+
+    COST 100
+    VOLATILE 
+    ROWS 100000
+AS $BODY$
+	DECLARE
+    sSQL text;
+	apply_data_from text;
+	apply_data_to text;
+	param_cnt integer;
+    apply_time text;
+	maxdate text;
+	limit_time text;
+
+BEGIN
+    
+	param_cnt:=array_length(regexp_split_to_array(xypoint::text,','),1);
+	  IF param_cnt = 0 THEN
+        RAISE EXCEPTION 'invalid point parameter!!';
+      END IF;
+	  
+	  IF length(fromdt) <> 14 THEN
+        RAISE EXCEPTION 'invalid from date parameter!!';
+      END IF;
+	  IF length(todt) <> 14 THEN
+        RAISE EXCEPTION 'invalid to date parameter!!';
+      END IF;	
+      apply_data_from :=nearest_time(fromdt);
+	  apply_data_to :=nearest_time(todt);
+      sSQL := generate_range_sql('search_range_dwithin_15',apply_data_from, apply_data_to, xypoint,param_cnt );
+	  --RAISE notice '%', sSQL;
+	  return  query 
+	  EXECUTE  sSQL;
+	  IF NOT FOUND THEN
+			select max(a._timestamp) into maxdate from weather.weather_info a;  
+			select TO_CHAR(TO_TIMESTAMP(maxdate, 'YYYYMMDDHH24') + interval '3 hour','YYYYMMDDHH24MISS') into limit_time;
+
+			IF todt <= limit_time THEN
+				sSQL := generate_range_sql('search_range_dwithin_15',apply_data_from, maxdate, xypoint,param_cnt);
+				--RAISE notice '%', sSQL;
+				return  query 
+				EXECUTE sSQL;  			
+			END IF;
+	  END IF;
+END ;
+$BODY$;
+
+ALTER FUNCTION weather.search_range_dwithin_15(text, text, text)
+    OWNER TO hhiweather;
